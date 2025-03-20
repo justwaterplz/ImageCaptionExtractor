@@ -52,15 +52,36 @@ class ProgressBarDialog(QDialog):
 
         self.setLayout(layout)
 
-    def update_progress(self, value):
+    def update_progress(self, processed, total):
         """진행률 업데이트"""
-        self.progress_bar.setValue(value)
-        self.progress_label.setText(f"진행 상황: {value}%")
+        if total > 0:
+            percentage = int((processed / total) * 100)
+            self.progress_bar.setValue(percentage)
+            self.progress_label.setText(f"진행 상황: {processed}/{total} ({percentage}%)")
+            
+            # 모든 처리가 완료되면 UI 업데이트
+            if processed == total:
+                self.progress_label.setText(f"처리 완료! ({total}개 이미지 처리됨)")
+                self.cancel_button.setText("닫기")  # "취소" 대신 "닫기"로 변경
+                self.cancel_button.setStyleSheet("background-color: #4CAF50; color: white;")  # 초록색 배경으로 변경
+                
+                try:
+                    self.cancel_button.clicked.disconnect()  # 기존 연결 해제
+                except TypeError:
+                    pass  # 연결이 없는 경우 무시
+                
+                self.cancel_button.clicked.connect(self.accept)  # accept로 변경
+                
+                # 완료 메시지를 로그에 추가
+                self.add_log("\n모든 이미지 처리가 완료되었습니다!")
 
     def update_current_file(self, file_path):
         """현재 처리 중인 파일 정보 업데이트"""
-        self.current_file_label.setText(f"처리 중인 파일: {file_path}")
-        self.add_log(f"\n새로운 파일 처리 시작: {file_path}")
+        if file_path:
+            self.current_file_label.setText(f"처리 중인 파일: {file_path}")
+            self.add_log(f"\n새로운 파일 처리 시작: {file_path}")
+        else:
+            self.current_file_label.setText("처리 완료")
 
     def add_log(self, message):
         """로그 메시지 추가"""

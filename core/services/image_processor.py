@@ -116,7 +116,7 @@ class ImageProcessor(QObject):
                 self.progress_dialog.show()
                 QApplication.processEvents()
                 
-                # Worker 시작
+                # Worker 시작 - JSONL 파일 초기화 및 처리 시작
                 self.worker.start()
 
             except Exception as e:
@@ -429,47 +429,28 @@ class ImageProcessor(QObject):
     def format_response(self, response):
         """응답을 보기 좋게 포맷팅"""
         try:
-            # 딕셔너리인 경우
+            # 응답이 딕셔너리인 경우
             if isinstance(response, dict):
-                # 키워드 데이터 가져오기
-                keywords_all = response.get('keywords', '정보 없음')
-                keywords_vector = response.get('keywords_vector', '')
-                keywords_ai = response.get('keywords_ai', '')
-                
-                formatted_text = (
-                    f"파일 유형: {response.get('file_type', '정보 없음')}\n"
-                    f"이미지 설명: {response.get('image_desc', '정보 없음')}\n"
-                    f"주제 및 컨셉: {response.get('theme', '정보 없음')}\n"
-                    f"인물 정보: {response.get('person_info', '정보 없음')}\n"
-                    f"키워드: {keywords_all}\n"
-                )
-                
-                # 벡터 스토어 키워드가 있는 경우 추가
-                if keywords_vector:
-                    formatted_text += f"키워드(vector store): {keywords_vector}\n"
-                
-                # AI 생성 키워드가 있는 경우 추가
-                if keywords_ai:
-                    formatted_text += f"키워드(AI 생성): {keywords_ai}\n"
-                
-                formatted_text += f"주요 색상: {response.get('colors', '정보 없음')}"
-                
-                return formatted_text
-            
-            # 문자열인 경우 (파이프로 구분된 응답)
-            elif isinstance(response, str) and '|' in response:
-                parts = [part.strip() for part in response.split('|') if part.strip()]
-                if len(parts) >= 6:
-                    return (
-                        f"파일 유형: {parts[0]}\n"
-                        f"이미지 설명: {parts[1]}\n"
-                        f"주제 및 컨셉: {parts[2]}\n"
-                        f"인물 정보: {parts[3]}\n"
-                        f"키워드: {parts[4]}\n"
-                        f"주요 색상: {parts[5]}"
+                # JSON 형식인 경우
+                if 'text' in response and isinstance(response['text'], dict):
+                    text_data = response['text']
+                    formatted_text = (
+                        f"파일명: {response.get('content', '정보 없음')}\n"
+                        f"이미지 경로: {response.get('image_path', '정보 없음')}\n"
+                        f"영어 캡션: {text_data.get('english_caption', '정보 없음')}\n"
+                        f"한글 캡션: {text_data.get('korean_caption', '정보 없음')}\n"
                     )
+                    
+                    # concept 필드가 있으면 추가
+                    if 'concept' in text_data:
+                        formatted_text += f"주제 및 컨셉: {text_data.get('concept', '정보 없음')}"
+                        
+                    return formatted_text
+                else:
+                    # JSON 형식이 아닌 경우 그대로 반환
+                    return json.dumps(response, ensure_ascii=False, indent=2)
             
-            # 그 외의 경우 원본 반환
+            # 문자열인 경우 그대로 반환
             return str(response)
             
         except Exception as e:
@@ -495,30 +476,24 @@ class ImageProcessor(QObject):
         self.logger.info("process_complete 호출됨")
         
         if self.progress_dialog:
+            # JSONL 파일 경로 가져오기
+            jsonl_file_path = self.worker.jsonl_file_path if self.worker else None
+            
             self.progress_dialog.add_log("\n모든 이미지 처리가 완료되었습니다.")
             self.progress_dialog.update_progress(100)
 
-            if self.results:
-                # 최종 결과 로깅
-                self.logger.info(f"Processing completed. Total results: {len(self.results)}")
+            if jsonl_file_path and os.path.exists(jsonl_file_path):
+                self.progress_dialog.add_log(f"\n결과가 JSONL 파일에 저장되었습니다: {jsonl_file_path}")
                 
-                # 자동 저장 설정이 활성화된 경우 결과 저장 시도
-                if self.settings_handler.get_setting('auto_save', False):
-                    # 결과 저장 시도
-                    saved_path = self.save_results_to_excel()
-                    if saved_path:
-                        self.progress_dialog.add_log(f"\n결과가 자동으로 저장되었습니다: {saved_path}")
-                    else:
-                        self.progress_dialog.add_log("\n자동 저장에 실패했습니다. 수동으로 저장해주세요.")
-                else:
-                    # 자동 저장이 비활성화된 경우 안내 메시지 표시 후 저장 다이얼로그 표시
-                    self.progress_dialog.add_log("\n처리가 완료되었습니다. 결과를 저장합니다...")
-                    # 저장 다이얼로그 표시
-                    saved_path = self.save_results_to_excel()
-                    if saved_path:
-                        self.progress_dialog.add_log(f"\n결과가 저장되었습니다: {saved_path}")
-                    else:
-                        self.progress_dialog.add_log("\n결과 저장이 취소되었습니다.")
+                # 결과 파일 수를 확인하여 로그 추가
+                try:
+                    with open(jsonl_file_path, 'r', encoding='utf-8') as f:
+                        line_count = sum(1 for _ in f)
+                    self.progress_dialog.add_log(f"총 {line_count}개의 이미지 처리 결과가 저장되었습니다.")
+                except Exception as e:
+                    self.logger.error(f"파일 라인 수 확인 오류: {e}")
+            else:
+                self.progress_dialog.add_log("\n처리 결과 저장에 실패했거나 결과 파일을 찾을 수 없습니다.")
 
             # 시그널 발생
             self.process_finished.emit()
@@ -528,159 +503,6 @@ class ImageProcessor(QObject):
             
             # 취소 버튼 텍스트 변경
             self.progress_dialog.cancel_button.setText("닫기")
-
-    def save_results_to_excel(self):
-        """처리 결과 저장"""
-        try:
-            if not self.results:
-                self.status_signal.emit("저장할 결과가 없습니다.")
-                return
-
-            # 파일 저장 다이얼로그 표시
-            from PyQt5.QtWidgets import QFileDialog
-            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-            default_filename = f"키워드추출결과_{timestamp}.xlsx"
-            
-            excel_file_path, _ = QFileDialog.getSaveFileName(
-                self.main_ui,
-                "결과 저장",
-                os.path.join(self.last_save_directory, default_filename),
-                "Excel Files (*.xlsx);;All Files (*)"
-            )
-            
-            if not excel_file_path:  # 사용자가 취소한 경우
-                return
-                
-            # 확장자 확인 및 추가
-            if not excel_file_path.lower().endswith('.xlsx'):
-                excel_file_path += '.xlsx'
-                print(f"Added missing .xlsx extension: {excel_file_path}")
-            
-            # 선택된 디렉토리 저장
-            self.last_save_directory = os.path.dirname(excel_file_path)
-            self.settings_handler.save_setting('last_save_directory', self.last_save_directory)
-
-            # 모든 결과를 하나의 DataFrame으로 변환
-            all_results = []
-            for result in self.results:
-                image_path = result['file_path']
-                response = result['response']
-                
-                # 응답이 딕셔너리인지 확인
-                if isinstance(response, dict):
-                    # 키워드 분리 - 전체키워드[vector store 키워드][AI 생성 키워드] 형식 확인
-                    keywords_all = response.get('keywords', '키워드 없음')
-                    keywords_vector = response.get('keywords_vector', '')
-                    keywords_ai = response.get('keywords_ai', '')
-                    
-                    df = pd.DataFrame([{
-                        '파일명': os.path.basename(image_path),
-                        '파일타입': response.get('file_type', '포토'),
-                        '이미지설명': response.get('image_desc', '설명 없음'),
-                        '주제및컨셉': response.get('theme', '정보 없음'),
-                        '인물정보': response.get('person_info', '인물 없음'),
-                        '키워드(전체)': keywords_all,
-                        '키워드(vector store 참조)': keywords_vector,
-                        '키워드(AI 생성)': keywords_ai,
-                        '주요색상': response.get('colors', '색상 정보 없음')
-                    }])
-                    all_results.append(df)
-
-            if all_results:
-                # DataFrame 생성 및 저장
-                combined_df = pd.concat(all_results, ignore_index=True)
-                
-                # 저장할 열 순서 지정
-                columns = ['파일명', '파일타입', '이미지설명', '주제및컨셉', '인물정보', 
-                          '키워드(전체)', '키워드(vector store 참조)', '키워드(AI 생성)', '주요색상']
-                
-                # 필요한 열만 선택 (누락된 열이 있을 경우 오류 방지)
-                available_columns = [col for col in columns if col in combined_df.columns]
-                combined_df = combined_df[available_columns]
-                
-                # 엑셀 저장 시 스타일 적용
-                with pd.ExcelWriter(excel_file_path, engine='openpyxl') as writer:
-                    # 데이터프레임의 텍스트 컬럼 데이터 정제
-                    for col in combined_df.columns:
-                        # 긴 텍스트 데이터를 정리하기 위한 처리
-                        if col in ['이미지설명', '주제및컨셉', '인물정보', '키워드(전체)', '키워드(vector store 참조)', '키워드(AI 생성)']:
-                            combined_df[col] = combined_df[col].apply(lambda x: self.clean_text_for_excel(x) if isinstance(x, str) else x)
-                    
-                    combined_df.to_excel(writer, index=False, sheet_name='분석결과')
-                    
-                    # 워크시트 가져오기
-                    worksheet = writer.sheets['분석결과']
-                    
-                    # 열 너비 자동 조정
-                    for idx, column in enumerate(worksheet.columns):
-                        max_length = 0
-                        column_name = combined_df.columns[idx]
-                        
-                        # 컬럼명의 길이 확인
-                        max_length = max(max_length, len(str(column_name)))
-                        
-                        # 해당 컬럼의 모든 데이터 길이 확인
-                        for cell in column:
-                            try:
-                                if cell.value:
-                                    # 줄바꿈이 있는 경우 각 줄의 최대 길이 확인
-                                    cell_text = str(cell.value)
-                                    lines = cell_text.split('\n')
-                                    for line in lines:
-                                        # 한글은 2자, 영문/숫자는 1자로 계산
-                                        length = sum(2 if ord(c) > 127 else 1 for c in line)
-                                        max_length = max(max_length, length)
-                            except:
-                                pass
-                        
-                        # 열 너비 설정 (최소 15, 최대 80)
-                        if column_name in ['이미지설명', '주제및컨셉']:
-                            # 설명/컨셉은 넓게 설정
-                            adjusted_width = 80
-                        elif column_name in ['인물정보', '키워드(전체)', '키워드(vector store 참조)', '키워드(AI 생성)']:
-                            # 키워드와 인물 정보는 중간 크기로 설정
-                            adjusted_width = 50
-                        else:
-                            # 다른 열은 내용에 따라 자동 조정 (최소 15, 최대 30)
-                            adjusted_width = max(min(max_length + 2, 30), 15)
-                        
-                        worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
-
-                    # 행 높이 자동 조정
-                    for idx, row in enumerate(worksheet.rows):
-                        if idx > 0:  # 헤더 행 제외
-                            # 행 높이를 자동으로 조정 (키워드 개행에 따라 적절한 높이 설정)
-                            # 키워드 컬럼의 줄 수에 따라 높이 조정
-                            row_height = 20  # 기본 높이
-                            
-                            # 해당 행의 키워드 셀 확인
-                            for cell in row:
-                                col_idx = cell.column - 1  # 0-based index
-                                if col_idx < len(available_columns):
-                                    col_name = available_columns[col_idx]
-                                    if cell.value and isinstance(cell.value, str):
-                                        # 키워드 컬럼은 더 많은 공간 할당
-                                        if '키워드' in col_name:
-                                            # 키워드 수에 따라 높이 조정 (쉼표 기준)
-                                            keyword_count = cell.value.count(',') + 1
-                                            cell_height = min(max(keyword_count * 5, 20), 40)  # 최소 20, 최대 40
-                                            row_height = max(row_height, cell_height)
-                                        else:
-                                            # 다른 컬럼은 기본 높이 유지
-                                            row_height = max(row_height, 20)
-                            
-                            worksheet.row_dimensions[idx + 1].height = row_height
-
-                self.logger.info(f"Combined results saved to: {excel_file_path}")
-                if self.progress_dialog:
-                    self.progress_dialog.add_log(f"\n결과가 저장되었습니다: {excel_file_path}")
-                
-                return excel_file_path  # 성공적으로 저장된 파일 경로 반환
-
-        except Exception as e:
-            self.logger.error(f"Error saving results: {e}")
-            self.error_occurred.emit(f"결과 저장 중 오류 발생: {str(e)}")
-            return None  # 오류 발생 시 None 반환
 
     def cancel_processing(self):
         """처리 취소"""
@@ -743,37 +565,3 @@ class ImageProcessor(QObject):
         if not self.processing_completed and processed_count >= total_count:
             print("DEBUG - All files processed, calling process_complete")
             self.process_complete()
-
-    def clean_text_for_excel(self, text):
-        """엑셀에 표시할 텍스트 정리"""
-        if not isinstance(text, str) or not text.strip():
-            return ""
-        
-        # 줄바꿈 문자를 엑셀에서 사용할 수 있는 줄바꿈으로 변환
-        # \n을 줄바꿈으로 변환 (엑셀에서는 Alt+Enter로 표시됨)
-        text = re.sub(r'\\n', '\n', text)
-        
-        # 키워드 컬럼인 경우 특별 처리
-        if '키워드' in text and ',' in text:
-            # 키워드 형식을 유지하되 가독성을 위해 개행 추가
-            # 쉼표 뒤에 공백이 있는 경우와 없는 경우 모두 처리
-            text = re.sub(r',\s*', ', ', text)  # 쉼표 뒤에 공백 추가
-            
-            # 키워드 형식이 "키워드 (가중치)" 형태인지 확인하고 유지
-            text = re.sub(r'\(\s*([0-9.]+)\s*\)', r' (\1)', text)  # 괄호 안의 공백 제거
-        
-        # 과도한 공백 제거 (선행/후행 공백 및 여러 공백을 하나로 병합)
-        # 줄바꿈은 유지하면서 각 줄의 앞뒤 공백만 제거
-        lines = text.split('\n')
-        cleaned_lines = [line.strip() for line in lines]
-        text = '\n'.join(cleaned_lines)
-        
-        # 특수 문자 중 엑셀에서 문제가 될 수 있는 것들 처리
-        # 유니코드 제어 문자 제거
-        text = re.sub(r'[\x00-\x1F\x7F]', '', text)
-        
-        # 매우 긴 텍스트의 경우, 첫 1000자만 유지 (필요시 조정)
-        if len(text) > 1000:
-            text = text[:997] + '...'
-        
-        return text

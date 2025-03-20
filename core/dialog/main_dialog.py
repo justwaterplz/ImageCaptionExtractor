@@ -674,12 +674,18 @@ class MainUI(QMainWindow):
             file_name = os.path.basename(file_path)
             self.logger.info(f"Processing completed for: {file_name}")
             
-            # 응답이 완벽한지 확인
+            # 응답이 완벽한지 확인 (새로운 스키마에 맞게 수정)
             is_valid_response = False
             if isinstance(response, dict):
-                required_fields = ["file_type", "image_desc", "theme", "person_info", "keywords", "colors"]
-                # 모든 필수 필드가 있고, 키워드가 비어있지 않은지 확인
-                if all(field in response for field in required_fields) and response.get("keywords"):
+                # 새로운 스키마의 필수 필드만 체크
+                required_fields = ["text"]
+                text_required_fields = ["english_caption", "korean_caption"]
+                
+                # text 객체와 그 안의 필수 필드들이 있는지 확인
+                if all(field in response for field in required_fields) and \
+                   all(field in response["text"] for field in text_required_fields) and \
+                   response["text"]["english_caption"].strip() and \
+                   response["text"]["korean_caption"].strip():
                     is_valid_response = True
             
             # 테이블에서 해당 파일 항목 찾기
@@ -838,6 +844,18 @@ class MainUI(QMainWindow):
         self.select_all_btn.clicked.connect(self.file_operations.toggle_select_all)
         self.send_data_btn.clicked.connect(self.on_send_data)
         self.settings_btn2.clicked.connect(self.show_settings_dialog)
+
+        # WorkerThread의 remove_from_table 시그널 연결
+        if hasattr(self, 'worker') and self.worker:
+            self.worker.remove_from_table.connect(self.remove_processed_image)
+                
+    def remove_processed_image(self, file_path):
+        """처리 완료된 이미지를 테이블에서 제거"""
+        for row in range(self.image_table.rowCount()):
+            widget = self.image_table.cellWidget(row, 0)
+            if widget and widget.property("file_path") == file_path:
+                self.image_table.removeRow(row)
+                break
 
     def on_send_data(self):
         """이미지 전송 버튼 클릭 시 호출"""
