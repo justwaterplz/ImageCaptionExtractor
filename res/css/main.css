@@ -1,0 +1,91 @@
+QMainWindow {
+    background-color: #fff;
+}
+
+#change_btn {
+    padding: 5px;
+    border: none;
+    width: 30px;
+    height: 30px;
+}
+
+#widget {
+    background-color: #f9fafd;
+}
+
+#icon_only_widget, #full_menu_widget {
+    background-color: #5D7CA6;
+}
+
+#icon_only_widget QPushButton, #icon_only_widget QLabel {
+    height: 50px;
+    border: none;
+}
+
+#icon_only_widget QPushButton:hover {
+    background-color: rgba(86, 101, 115, 0.5);
+}
+
+#logo_label_1 {
+    padding: 5px;
+}
+
+#full_menu_widget QPushButton {
+    border: none;
+    border-radius: 3px;
+    text-align: left;
+    padding: 8px 0 8px 15px;
+    color: #788596;
+}
+
+#full_menu_widget #exit_btn2 {
+    text-align: center;
+    padding: 8px 0;
+}
+
+#full_menu_widget QPushButton:hover {
+    background-color: rgba(86, 101, 115, 0.5);
+}
+
+#full_menu_widget QPushButton {
+    color: #fff;
+}
+
+#logo_label_2 {
+    padding: 5px;
+    color: #fff;
+}
+
+#logo_label_3 {
+    padding-right: 10px;
+    color: #fff;
+}
+
+/* 테이블 스타일 */
+QTableWidget {
+    background-color: white;
+    border: 1px solid #d0d0d0;
+    selection-background-color: #14cee3;
+    selection-color: black;
+}
+
+QHeaderView {
+    background-color: #f0f0f0;
+    border: none;
+    border-bottom: 2px solid #a0a0a0;
+}
+
+QTableView QTableCornerButton {
+    background-color: #f0f0f0;
+    border: none;
+}
+
+#main_page {
+    background-color: white;
+}
+
+#left_widget {
+    background-color: white;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+}
