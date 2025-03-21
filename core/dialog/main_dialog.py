@@ -42,6 +42,8 @@ class MainUI(QMainWindow):
         # ImageProcessor는 settings_handler 초기화 후에 생성
         self.image_processor = ImageProcessor(self, self.settings_handler)
         
+        self.processed_images = set()  # 처리 완료된 이미지 경로를 저장할 set
+        
         self.init_ui()
         self.setup_signals()
         
@@ -420,10 +422,33 @@ class MainUI(QMainWindow):
         # 프로그레스바 업데이트 로직
 
     def on_process_finished(self):
-        if self.progress:
-            self.progress.close()
-        if hasattr(self, 'widget_file_list'):
-            self.widget_file_list.clear()
+        """모든 이미지 처리가 완료된 후 호출되는 메서드"""
+        try:
+            if self.progress:
+                self.progress.close()
+            
+            # 체크된 항목들을 테이블에서 제거
+            rows_to_remove = []
+            for row in range(self.image_table.rowCount()):
+                widget = self.image_table.cellWidget(row, 0)
+                if widget:
+                    checkbox = widget.findChild(QCheckBox)
+                    if checkbox and checkbox.isChecked():
+                        rows_to_remove.append(row)
+            
+            # 제거할 행이 있으면 처리 (역순으로 제거)
+            if rows_to_remove:
+                for row in sorted(rows_to_remove, reverse=True):
+                    self.image_table.removeRow(row)
+                
+                # 처리 완료 메시지 표시
+                QMessageBox.information(self, "처리 완료", f"{len(rows_to_remove)}개의 이미지 처리가 완료되었습니다.")
+            
+            # 버튼 상태 업데이트
+            self.update_button_states()
+            
+        except Exception as e:
+            print(f"Error in on_process_finished: {str(e)}")
 
     def on_error(self, error_message):
         """에러 처리"""
@@ -672,56 +697,24 @@ class MainUI(QMainWindow):
         """개별 결과 처리"""
         try:
             file_name = os.path.basename(file_path)
-            self.logger.info(f"Processing completed for: {file_name}")
+            print(f"Processing completed for: {file_name}")
             
-            # 응답이 완벽한지 확인 (새로운 스키마에 맞게 수정)
+            # 응답이 완벽한지 확인
             is_valid_response = False
             if isinstance(response, dict):
-                # 새로운 스키마의 필수 필드만 체크
-                required_fields = ["text"]
-                text_required_fields = ["english_caption", "korean_caption"]
-                
-                # text 객체와 그 안의 필수 필드들이 있는지 확인
-                if all(field in response for field in required_fields) and \
-                   all(field in response["text"] for field in text_required_fields) and \
-                   response["text"]["english_caption"].strip() and \
-                   response["text"]["korean_caption"].strip():
+                if response.get("text") and \
+                   response["text"].get("english_caption") and \
+                   response["text"].get("korean_caption"):
                     is_valid_response = True
+                    # 성공적으로 처리된 이미지 경로 저장
+                    self.processed_images.add(file_path)
+                    print(f"Added to processed images: {file_name}")
             
-            # 테이블에서 해당 파일 항목 찾기
-            found = False
-            for row in range(self.image_table.rowCount()):
-                item = self.image_table.item(row, 1)  # 파일명 열
-                if item and item.data(Qt.UserRole) == file_path:
-                    self.logger.info(f"Found matching file at row {row}")
-                    
-                    # 응답이 완벽한 경우에만 테이블에서 삭제
-                    if is_valid_response:
-                        self.logger.info(f"Removing row {row} from table (valid response)")
-                        self.image_table.removeRow(row)
-                    else:
-                        self.logger.info(f"Not removing row {row} (invalid response)")
-                        # 응답이 완벽하지 않은 경우 행 색상 변경
-                        self.update_row_color(row, QColor(255, 200, 200))  # 연한 빨간색
-                    
-                    found = True
-                    break
-            
-            if not found:
-                self.logger.info(f"File not found in table: {file_name}")
-            
-            # 버튼 상태 업데이트
-            self.update_button_states()
-            
-            # 모든 이미지가 처리되었는지 확인
-            if self.image_table.rowCount() == 0:
-                self.logger.info("All images processed, showing save dialog")
-                # 저장 다이얼로그 표시
-                if hasattr(self, 'image_processor') and self.image_processor.results:
-                    self.image_processor.save_results_to_excel()
+            if not is_valid_response:
+                print(f"Invalid response for image: {file_name}")
             
         except Exception as e:
-            self.logger.error(f"Error in handle_result: {str(e)}")
+            print(f"Error in handle_result: {str(e)}")
 
     def process_complete(self):
         """모든 처리 완료"""
